@@ -2,7 +2,8 @@ import os
 import tempfile
 import subprocess
 import telebot
-
+import k
+keep_alive()
 # تنظیم توکن ربات
 TOKEN = "7735265225:AAFeWVHRcnAmgt8KdqbOdjhEmipRJHYXiW0"
 bot = telebot.TeleBot(TOKEN)
