@@ -3,7 +3,9 @@ import tempfile
 import subprocess
 import telebot
 from k import keep_alive
+
 keep_alive()
+
 # تنظیم توکن ربات
 TOKEN = "7735265225:AAFeWVHRcnAmgt8KdqbOdjhEmipRJHYXiW0"
 bot = telebot.TeleBot(TOKEN)
@@ -50,9 +52,14 @@ def handle_video(message):
             # پردازش ویدیو
             process_video(input_path, output_path)
             
-            # ارسال به عنوان Video Note
-            with open(output_path, 'rb') as video_note:
-                bot.send_video_note(message.chat.id, video_note)
+            # بررسی حجم فایل خروجی
+            file_size = os.path.getsize(output_path)
+            if file_size < 1024 * 1024:  # اگر حجم فایل کمتر از 1 مگابایت باشد
+                with open(output_path, 'rb') as video_file:
+                    bot.send_video(message.chat.id, video_file)
+            else:
+                with open(output_path, 'rb') as video_note:
+                    bot.send_video_note(message.chat.id, video_note)
             
             # حذف فایلهای موقت
             os.remove(input_path)
