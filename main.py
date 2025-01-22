@@ -6,7 +6,6 @@ from k import keep_alive
 
 keep_alive()
 
-# تنظیم توکن ربات
 TOKEN = "7735265225:AAFeWVHRcnAmgt8KdqbOdjhEmipRJHYXiW0"
 bot = telebot.TeleBot(TOKEN)
 bot.delete_my_commands()
@@ -16,10 +15,12 @@ def process_video(input_path, output_path):
         command = [
             "ffmpeg",
             "-i", input_path,
-            "-vf", "crop=min(iw\,ih):min(iw\,ih)",
-            "-t", "60",
-            "-fs", "49M",
+            "-vf", "crop=min(iw\,ih):min(iw\,ih),scale=640:640",  # تبدیل به مربع 640x640
+            "-t", "60",  # محدودیت مدت زمان به 60 ثانیه
+            "-fs", "1M",  # محدودیت حجم فایل به 1 مگابایت (حداکثر مجاز برای Video Note)
             "-c:v", "libx264",
+            "-preset", "fast",  # افزایش سرعت پردازش
+            "-crf", "28",  # کاهش کیفیت برای کوچک کردن حجم
             "-c:a", "aac",
             "-y",
             output_path
@@ -32,44 +33,34 @@ def process_video(input_path, output_path):
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     try:
-        # حذف پیام ویدیو از چت (بلافاصله پس از دریافت)
+        # حذف پیام ویدیو از چت
         bot.delete_message(message.chat.id, message.message_id)
-        print("پیام ویدیو از چت حذف شد.")
 
-        # دریافت اطلاعات ویدیو
+        # دریافت ویدیو
         file_info = bot.get_file(message.video.file_id)
         downloaded_file = bot.download_file(file_info.file_path)
         
-        # ایجاد پوشه موقت
         with tempfile.TemporaryDirectory() as tmp_dir:
             input_path = os.path.join(tmp_dir, "input.mp4")
             output_path = os.path.join(tmp_dir, "output.mp4")
             
-            # ذخیره موقت ویدیو دانلود شده
+            # ذخیره موقت ویدیو
             with open(input_path, 'wb') as f:
                 f.write(downloaded_file)
             
             # پردازش ویدیو
             process_video(input_path, output_path)
             
-            # بررسی حجم فایل خروجی
-            file_size = os.path.getsize(output_path)
-            if file_size < 1024 * 1024:  # اگر حجم فایل کمتر از 1 مگابایت باشد
-                with open(output_path, 'rb') as video_file:
-                    bot.send_video(message.chat.id, video_file)
-            else:
-                with open(output_path, 'rb') as video_note:
-                    bot.send_video_note(message.chat.id, video_note)
+            # بررسی وجود فایل خروجی
+            if not os.path.exists(output_path):
+                raise Exception("فایل خروجی ایجاد نشد.")
             
-            # حذف فایلهای موقت
-            os.remove(input_path)
-            os.remove(output_path)
-            print("فایلهای موقت با موفقیت حذف شدند.")
+            # ارسال به عنوان Video Note
+            with open(output_path, 'rb') as video_note:
+                bot.send_video_note(message.chat.id, video_note)
     
     except Exception as e:
-        # ارسال پیام خطا بدون استفاده از reply_to
-        bot.send_message(message.chat.id, f"خطا: {str(e)}")
+        bot.send_message(message.chat.id, f"❌ خطا: {str(e)}")
 
-# شروع ربات
 if __name__ == "__main__":
     bot.polling()
