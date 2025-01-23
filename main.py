@@ -97,6 +97,13 @@ def process_video(input_path, output_path, message):
         if process.returncode != 0:
             raise subprocess.CalledProcessError(process.returncode, command)
 
+        # پس از اتمام پردازش، Progress Bar را به 100% برسانید
+        bot.edit_message_text(
+            "✅ پردازش ویدیو کامل شد! در حال ارسال ویدیو...",
+            chat_id=progress_message.chat.id,
+            message_id=progress_message.message_id
+        )
+
     except subprocess.CalledProcessError as e:
         print(f"خطا در پردازش: {e.stderr}")
         raise
@@ -126,6 +133,9 @@ def handle_video(message):
 
             with open(output_path, 'rb') as video_note:
                 bot.send_video_note(message.chat.id, video_note)
+
+            # ارسال پیام تأیید نهایی
+            bot.send_message(message.chat.id, "🎉 ویدیو با موفقیت ارسال شد!")
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ خطا: {str(e)}")
