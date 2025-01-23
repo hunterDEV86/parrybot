@@ -50,12 +50,12 @@ def process_video(input_path, output_path, message):
             "ffmpeg",
             "-i", input_path,
             "-vf", "crop=min(iw\,ih):min(iw\,ih),scale=640:640",
-            "-t", "60",
-            "-fs", "1M",
+            "-t", "60",  # محدودیت مدت زمان
+            "-fs", "1M",  # محدودیت حجم فایل
             "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "28",
-            "-c:a", "aac",
+            "-preset", "superfast",  # استفاده از preset سریع‌تر
+            "-crf", "30",  # افزایش CRF برای کاهش کیفیت و سرعت بیشتر
+            "-an",  # حذف صدا
             "-y",
             output_path
         ]
@@ -63,6 +63,7 @@ def process_video(input_path, output_path, message):
 
         # ارسال پیام اولیه برای Progress Bar
         progress_message = bot.send_message(message.chat.id, "🔄 در حال پردازش ویدیو...\n[░░░░░░░░░░] 0%")
+        last_percentage = 0  # ذخیره آخرین درصد پیشرفت
 
         while True:
             output = process.stderr.readline()
@@ -74,17 +75,23 @@ def process_video(input_path, output_path, message):
                 h, m, s = map(float, time_str.split(':'))
                 total_seconds = h * 3600 + m * 60 + s
                 progress = min(total_seconds / 60, 1.0)  # محدودیت مدت زمان 60 ثانیه
-
-                # به‌روزرسانی Progress Bar
-                bar_length = 10
-                filled_length = int(bar_length * progress)
-                bar = "[" + "█" * filled_length + "░" * (bar_length - filled_length) + "]"
                 percentage = int(progress * 100)
-                bot.edit_message_text(
-                    f"🔄 در حال پردازش ویدیو...\n{bar} {percentage}%",
-                    chat_id=progress_message.chat.id,
-                    message_id=progress_message.message_id
-                )
+
+                # فقط اگر درصد تغییر کرده باشد، پیام را به‌روزرسانی کنید
+                if percentage != last_percentage:
+                    bar_length = 10
+                    filled_length = int(bar_length * progress)
+                    bar = "[" + "█" * filled_length + "░" * (bar_length - filled_length) + "]"
+                    try:
+                        bot.edit_message_text(
+                            f"🔄 در حال پردازش ویدیو...\n{bar} {percentage}%",
+                            chat_id=progress_message.chat.id,
+                            message_id=progress_message.message_id
+                        )
+                        last_percentage = percentage  # به‌روزرسانی آخرین درصد
+                    except telebot.apihelper.ApiTelegramException as e:
+                        if "message is not modified" not in str(e):
+                            raise  # اگر خطا مربوط به تغییر نکردن پیام نباشد، آن را پرتاب کنید
 
         process.wait()
         if process.returncode != 0:
