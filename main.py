@@ -3,6 +3,7 @@ import tempfile
 import subprocess
 import telebot
 from telebot import types
+from threading import Thread
 from k import keep_alive
 
 keep_alive()
@@ -53,8 +54,8 @@ def process_video(input_path, output_path):
             "-t", "60",
             "-fs", "1M",
             "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "28",
+            "-preset", "superfast",  # استفاده از preset سریع‌تر
+            "-crf", "30",  # افزایش CRF برای کاهش کیفیت و سرعت بیشتر
             "-c:a", "aac",
             "-y",
             output_path
@@ -64,14 +65,7 @@ def process_video(input_path, output_path):
         print(f"خطا در پردازش: {e.stderr.decode()}")
         raise
 
-@bot.message_handler(content_types=['video'])
-def handle_video(message):
-    user_id = message.from_user.id
-    
-    if not check_membership(user_id):
-        show_join_alert(message)
-        return
-
+def process_and_send_video(message):
     try:
         # حذف پیام کاربر
         bot.delete_message(message.chat.id, message.message_id)
@@ -81,23 +75,34 @@ def handle_video(message):
             # دانلود ویدیو
             file_info = bot.get_file(message.video.file_id)
             downloaded_file = bot.download_file(file_info.file_path)
-            
+
             # ذخیره موقت
             input_path = os.path.join(tmp_dir, "input.mp4")
             output_path = os.path.join(tmp_dir, "output.mp4")
-            
+
             with open(input_path, 'wb') as f:
                 f.write(downloaded_file)
-            
+
             # پردازش ویدیو
             process_video(input_path, output_path)
-            
+
             # ارسال نتیجه
             with open(output_path, 'rb') as video_note:
                 bot.send_video_note(message.chat.id, video_note)
 
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ خطا: {str(e)}")
+
+@bot.message_handler(content_types=['video'])
+def handle_video(message):
+    user_id = message.from_user.id
+
+    if not check_membership(user_id):
+        show_join_alert(message)
+        return
+
+    # ایجاد یک Thread جدید برای پردازش ویدیو
+    Thread(target=process_and_send_video, args=(message,)).start()
 
 if __name__ == "__main__":
     bot.polling()
