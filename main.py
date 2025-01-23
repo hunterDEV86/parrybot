@@ -65,16 +65,18 @@ def process_video(input_path, output_path, message):
         progress_message = bot.send_message(message.chat.id, "🔄 در حال پردازش ویدیو...\n[░░░░░░░░░░] 0%")
         last_percentage = 0  # ذخیره آخرین درصد پیشرفت
 
+        # اندازه فایل ورودی
+        input_size = os.path.getsize(input_path)
+
         while True:
             output = process.stderr.readline()
             if output == '' and process.poll() is not None:
                 break
-            if "time=" in output:
-                # استخراج زمان پیشرفت از خروجی FFmpeg
-                time_str = output.split("time=")[1].split(" ")[0]
-                h, m, s = map(float, time_str.split(':'))
-                total_seconds = h * 3600 + m * 60 + s
-                progress = min(total_seconds / 60, 1.0)  # محدودیت مدت زمان 60 ثانیه
+
+            # بررسی پیشرفت بر اساس اندازه فایل خروجی
+            if os.path.exists(output_path):
+                output_size = os.path.getsize(output_path)
+                progress = min(output_size / input_size, 1.0)  # پیشرفت بر اساس حجم فایل
                 percentage = int(progress * 100)
 
                 # فقط اگر درصد تغییر کرده باشد، پیام را به‌روزرسانی کنید
