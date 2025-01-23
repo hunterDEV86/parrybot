@@ -50,13 +50,13 @@ def process_video(input_path, output_path):
         command = [
             "ffmpeg",
             "-i", input_path,
-            "-vf", "crop=min(iw\,ih):min(iw\,ih),scale=640:640",
-            "-t", "60",
-            "-fs", "1M",
+            "-vf", "scale=640:640",  # تغییر اندازه به 640x640 بدون crop
+            "-t", "30",  # محدودیت مدت زمان به 30 ثانیه
+            "-fs", "500K",  # محدودیت حجم فایل به 500 کیلوبایت
             "-c:v", "libx264",
-            "-preset", "superfast",  # استفاده از preset سریع‌تر
-            "-crf", "30",  # افزایش CRF برای کاهش کیفیت و سرعت بیشتر
-            "-c:a", "aac",
+            "-preset", "ultrafast",  # استفاده از سریع‌ترین preset
+            "-crf", "35",  # افزایش CRF برای کاهش کیفیت و سرعت بیشتر
+            "-an",  # حذف صدا
             "-y",
             output_path
         ]
