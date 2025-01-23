@@ -1,19 +1,20 @@
 import os
-import tempfile
+import uuid
 import subprocess
 import telebot
 from telebot import types
 from k import keep_alive
-
 keep_alive()
 
 TOKEN = "7735265225:AAFeWVHRcnAmgt8KdqbOdjhEmipRJHYXiW0"
 bot = telebot.TeleBot(TOKEN)
-bot.delete_my_commands()
 
-# تنظیمات جوین اجباری
 REQUIRED_CHANNEL = "@December0_3"
 CHANNEL_LINK = "https://t.me/December0_3"
+TEMP_DIR = "temp_videos"
+
+if not os.path.exists(TEMP_DIR):
+    os.makedirs(TEMP_DIR)
 
 def check_membership(user_id):
     try:
@@ -33,7 +34,6 @@ def show_join_alert(message):
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("عضویت در کانال", url=CHANNEL_LINK))
     markup.add(types.InlineKeyboardButton("بررسی عضویت", callback_data="check"))
-    bot.delete_message(message.chat.id, message.message_id)
     bot.send_message(message.chat.id, "❗️ برای استفاده از ربات باید در کانال ما عضو شوید:", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "check")
@@ -44,72 +44,41 @@ def check_callback(call):
     else:
         bot.answer_callback_query(call.id, "❌ هنوز عضو نشدید!", show_alert=True)
 
-def process_video(input_path, output_path, message):
+def process_video(input_path, output_path):
     try:
         command = [
-            "ffmpeg",
-            "-i", input_path,
-            "-vf", "crop=min(iw\,ih):min(iw\,ih),scale=640:640",
-            "-t", "60",  # محدودیت مدت زمان
-            "-fs", "1M",  # محدودیت حجم فایل
-            "-c:v", "libx264",
-            "-preset", "superfast",  # استفاده از preset سریع‌تر
-            "-crf", "30",  # افزایش CRF برای کاهش کیفیت و سرعت بیشتر
-            "-an",  # حذف صدا
-            "-y",
+            'ffmpeg',
+            '-i', input_path,
+            '-vf', "crop='min(iw,ih)':'min(iw,ih)',scale=640:640,format=yuv420p",
+            '-t', '60',
+            '-c:v', 'libx264',
+            '-profile:v', 'baseline',
+            '-level', '3.0',
+            '-movflags', '+faststart',
+            '-c:a', 'aac',
+            '-strict', 'experimental',
+            '-y',
             output_path
         ]
-        process = subprocess.Popen(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, universal_newlines=True)
-
-        # ارسال پیام اولیه برای Progress Bar
-        progress_message = bot.send_message(message.chat.id, "🔄 در حال پردازش ویدیو...\n[░░░░░░░░░░] 0%")
-        last_percentage = 0  # ذخیره آخرین درصد پیشرفت
-
-        # اندازه فایل ورودی
-        input_size = os.path.getsize(input_path)
-
-        while True:
-            output = process.stderr.readline()
-            if output == '' and process.poll() is not None:
-                break
-
-            # بررسی پیشرفت بر اساس اندازه فایل خروجی
-            if os.path.exists(output_path):
-                output_size = os.path.getsize(output_path)
-                progress = min(output_size / input_size, 1.0)  # پیشرفت بر اساس حجم فایل
-                percentage = int(progress * 100)
-
-                # فقط اگر درصد تغییر کرده باشد، پیام را به‌روزرسانی کنید
-                if percentage != last_percentage:
-                    bar_length = 10
-                    filled_length = int(bar_length * progress)
-                    bar = "[" + "█" * filled_length + "░" * (bar_length - filled_length) + "]"
-                    try:
-                        bot.edit_message_text(
-                            f"🔄 در حال پردازش ویدیو...\n{bar} {percentage}%",
-                            chat_id=progress_message.chat.id,
-                            message_id=progress_message.message_id
-                        )
-                        last_percentage = percentage  # به‌روزرسانی آخرین درصد
-                    except telebot.apihelper.ApiTelegramException as e:
-                        if "message is not modified" not in str(e):
-                            raise  # اگر خطا مربوط به تغییر نکردن پیام نباشد، آن را پرتاب کنید
-
-        process.wait()
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, command)
-
-        # پس از اتمام پردازش، Progress Bar را به 100% برسانید
-        bot.edit_message_text(
-            "✅ پردازش ویدیو کامل شد! در حال ارسال ویدیو...",
-            chat_id=progress_message.chat.id,
-            message_id=progress_message.message_id
+        
+        result = subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
         )
-
+        
     except subprocess.CalledProcessError as e:
-        print(f"خطا در پردازش: {e.stderr}")
-        raise
-
+        error_msg = f"""
+        ⚠️ FFmpeg Error Details:
+        Command: {e.cmd}
+        Exit Code: {e.returncode}
+        Output: {e.stdout}
+        Error: {e.stderr}
+        """
+        raise Exception(error_msg)
+    
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     user_id = message.from_user.id
@@ -119,28 +88,48 @@ def handle_video(message):
         return
 
     try:
-        bot.delete_message(message.chat.id, message.message_id)
+        processing_msg = bot.reply_to(message, "⏳ در حال پردازش ویدیو...")
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            file_info = bot.get_file(message.video.file_id)
-            downloaded_file = bot.download_file(file_info.file_path)
+        unique_id = str(uuid.uuid4())
+        input_path = os.path.join(TEMP_DIR, f"input_{unique_id}.mp4")
+        output_path = os.path.join(TEMP_DIR, f"output_{unique_id}.mp4")
 
-            input_path = os.path.join(tmp_dir, "input.mp4")
-            output_path = os.path.join(tmp_dir, "output.mp4")
+        # دانلود ویدیو با بررسی صحت
+        file_info = bot.get_file(message.video.file_id)
+        if not file_info.file_path.endswith(('.mp4', '.MP4')):
+            raise Exception("فرمت ویدیو پشتیبانی نمی‌شود!")
 
-            with open(input_path, 'wb') as f:
-                f.write(downloaded_file)
+        downloaded_file = bot.download_file(file_info.file_path)
+        with open(input_path, 'wb') as f:
+            f.write(downloaded_file)
 
-            process_video(input_path, output_path, message)
+        # بررسی وجود فایل ورودی
+        if not os.path.exists(input_path):
+            raise Exception("فایل ورودی دانلود نشد!")
 
-            with open(output_path, 'rb') as video_note:
-                bot.send_video_note(message.chat.id, video_note)
+        process_video(input_path, output_path)
 
-            # ارسال پیام تأیید نهایی
-            bot.send_message(message.chat.id, "🎉 ویدیو با موفقیت ارسال شد!")
+        # بررسی وجود فایل خروجی
+        if not os.path.exists(output_path):
+            raise Exception("فایل خروجی ایجاد نشد!")
+
+        with open(output_path, 'rb') as video_note:
+            bot.send_video_note(message.chat.id, video_note)
+
+        bot.delete_message(message.chat.id, processing_msg.message_id)
+        os.remove(input_path)
+        os.remove(output_path)
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ خطا: {str(e)}")
+        error_msg = f"""
+        ❌ خطای سیستمی:
+        {str(e)}
+        """
+        bot.reply_to(message, error_msg)
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
 
 if __name__ == "__main__":
     bot.polling()
