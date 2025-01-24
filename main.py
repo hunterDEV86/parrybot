@@ -3,9 +3,11 @@ import uuid
 import subprocess
 import telebot
 from telebot import types
+from yt_dlp import YoutubeDL
 from k import keep_alive
-keep_alive()
 
+keep_alive()
+# توکن بات تلگرام
 TOKEN = "7735265225:AAFeWVHRcnAmgt8KdqbOdjhEmipRJHYXiW0"
 bot = telebot.TeleBot(TOKEN)
 
@@ -15,6 +17,17 @@ TEMP_DIR = "temp_videos"
 
 if not os.path.exists(TEMP_DIR):
     os.makedirs(TEMP_DIR)
+
+# تنظیمات yt-dlp
+def download_video(url):
+    options = {
+        'format': 'best',  # دانلود بهترین کیفیت موجود
+        'outtmpl': f'{TEMP_DIR}/%(title)s.%(ext)s',  # مسیر ذخیره فایل دانلود شده
+        'quiet': True,  # جلوگیری از نمایش پیام‌های اضافی
+    }
+    with YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=True)  # اطلاعات و دانلود
+        return ydl.prepare_filename(info)  # بازگرداندن مسیر فایل
 
 def check_membership(user_id):
     try:
@@ -28,7 +41,7 @@ def start(message):
     if not check_membership(message.from_user.id):
         show_join_alert(message)
     else:
-        bot.reply_to(message, "🎬 ویدیوی خود را ارسال کنید تا به Video Note تبدیل شود!")
+        bot.reply_to(message, "👋 خوش آمدید! \n🎥 با ارسال لینک از یوتیوب، اینستاگرام یا تیک‌تاک، ویدیوی خود را دریافت کنید. \n🎬 همچنین می‌توانید ویدیوی خود را ارسال کنید تا به Video Note تبدیل شود. \n✨ لطفاً شروع کنید!")
 
 def show_join_alert(message):
     markup = types.InlineKeyboardMarkup()
@@ -40,7 +53,7 @@ def show_join_alert(message):
 def check_callback(call):
     if check_membership(call.from_user.id):
         bot.delete_message(call.message.chat.id, call.message.message_id)
-        bot.send_message(call.message.chat.id, "✅ عضویت شما تایید شد! لطفا ویدیو را ارسال کنید.")
+        bot.send_message(call.message.chat.id, "✅ عضویت شما تایید شد! لطفا لینک یا ویدیو را ارسال کنید.")
     else:
         bot.answer_callback_query(call.id, "❌ هنوز عضو نشدید!", show_alert=True)
 
@@ -60,7 +73,7 @@ def process_video(input_path, output_path):
             '-y',
             output_path
         ]
-        
+
         result = subprocess.run(
             command,
             check=True,
@@ -68,7 +81,7 @@ def process_video(input_path, output_path):
             stderr=subprocess.PIPE,
             universal_newlines=True
         )
-        
+
     except subprocess.CalledProcessError as e:
         error_msg = f"""
         ⚠️ FFmpeg Error Details:
@@ -78,7 +91,7 @@ def process_video(input_path, output_path):
         Error: {e.stderr}
         """
         raise Exception(error_msg)
-    
+
 @bot.message_handler(content_types=['video'])
 def handle_video(message):
     user_id = message.from_user.id
@@ -130,6 +143,29 @@ def handle_video(message):
             os.remove(input_path)
         if os.path.exists(output_path):
             os.remove(output_path)
+
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    url = message.text
+    user_id = message.from_user.id
+
+    if not check_membership(user_id):
+        show_join_alert(message)
+        return
+
+    try:
+        if any(domain in url for domain in ["youtube.com", "youtu.be", "tiktok.com", "instagram.com"]):
+            bot.reply_to(message, "در حال دانلود ویدیو، لطفاً صبر کنید...")
+            file_path = download_video(url)
+
+            with open(file_path, 'rb') as video:
+                bot.send_video(message.chat.id, video)
+
+            os.remove(file_path)
+        else:
+            bot.reply_to(message, "لینک ارسال شده معتبر نیست. لطفاً لینک یوتیوب، اینستاگرام یا تیک‌تاک ارسال کنید.")
+    except Exception as e:
+        bot.reply_to(message, f"متأسفم، مشکلی پیش آمد: {e}")
 
 if __name__ == "__main__":
     bot.polling()
